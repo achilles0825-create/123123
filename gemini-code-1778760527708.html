@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>🌊 AI 水族箱 - 26格高效零滾動版</title>
+    <style>
+        :root {
+            --primary: #00e5ff;
+            --danger: #ff5252;
+            --bg-dark: #051622;
+            --panel-bg: #081a29;
+        }
+
+        body { margin: 0; font-family: "Microsoft JhengHei", sans-serif; background: var(--bg-dark); color: white; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        h2 { text-align: center; margin: 5px 0; color: var(--primary); font-size: 20px; flex-shrink: 0; }
+
+        /* 水族箱主區域 */
+        #tank { 
+            width: 100%; flex-grow: 1; position: relative; overflow: hidden; 
+            background: linear-gradient(to bottom, #00bfff, #001b33 70%, #000a11); 
+            border-bottom: 2px solid var(--primary); cursor: crosshair;
+        }
+
+        /* 魚隻樣式 */
+        .fish { position: absolute; transition: transform 0.1s linear; user-select: none; z-index: 10; text-align: center; cursor: pointer; }
+        .fish-body { font-size: 35px; display: inline-block; transition: filter 0.3s, transform 0.3s; }
+        .fish.selected .fish-body { filter: drop-shadow(0 0 12px var(--primary)); transform: scale(1.2); }
+
+        /* 下方操作面板 (固定高度，不滾動) */
+        #control-center { 
+            height: 280px; background: var(--panel-bg); 
+            display: flex; padding: 10px; gap: 10px; box-sizing: border-box; flex-shrink: 0;
+        }
+
+        /* 左欄：當前資訊 */
+        .info-zone {
+            width: 180px; background: rgba(255,255,255,0.03); border-radius: 10px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border: 1px solid rgba(0, 229, 255, 0.2); padding: 5px;
+        }
+
+        /* 中欄：26格矩陣 */
+        .matrix-zone {
+            flex: 2; background: rgba(255,255,255,0.03); border-radius: 10px;
+            padding: 8px; border: 1px solid rgba(0, 229, 255, 0.2);
+            display: flex; flex-direction: column;
+        }
+
+        .matrix-grid {
+            display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; height: 100%;
+        }
+
+        .feed-cell {
+            background: #0a253a; border: 1px solid #1e3a52; border-radius: 4px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; transition: 0.2s; font-size: 9px; min-height: 45px;
+        }
+        .feed-cell:hover { background: #163d5a; }
+        .feed-cell.active-fish { border: 2px solid var(--primary); background: #1a4a6e; }
+        .feed-cell.starving { animation: blink-red 1s infinite; }
+
+        @keyframes blink-red { 
+            0%, 100% { background: #0a253a; } 50% { background: #7f1d1d; } 
+        }
+
+        .cell-icon { font-size: 16px; margin-bottom: 2px; }
+
+        /* 右欄：基因改造 */
+        .species-zone {
+            flex: 1; background: rgba(255,255,255,0.03); border-radius: 10px;
+            padding: 8px; border: 1px solid rgba(0, 229, 255, 0.2);
+            display: flex; flex-direction: column;
+        }
+
+        .species-grid { 
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+        }
+        .species-btn { font-size: 20px; background: #162d3d; border: 1px solid transparent; border-radius: 6px; cursor: pointer; height: 42px; display: flex; align-items: center; justify-content: center; }
+        .species-btn.active { border-color: var(--primary); background: #0288d1; }
+
+        /* 飼料 */
+        .food-item { position: absolute; font-size: 20px; pointer-events: none; z-index: 50; animation: foodFall 0.7s ease-in forwards; }
+        @keyframes foodFall { 0% { transform: translateY(-30px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(15px); opacity: 0; } }
+
+        .btn-all { background: var(--primary); border: none; border-radius: 4px; padding: 4px; font-weight: bold; cursor: pointer; margin-top: auto; width: 100%; font-size: 12px; color: #000; }
+    </style>
+</head>
+<body>
+
+<h2>🌊 AI 智慧水族箱系統</h2>
+
+<div id="tank" onclick="deselect()"></div>
+
+<div id="control-center">
+    <div class="info-zone">
+        <div id="sel-icon" style="font-size: 40px;">🔍</div>
+        <div id="sel-name" style="font-size: 14px; margin: 10px 0; color: var(--primary); text-align: center;">請選取生物</div>
+        <button class="btn-all" onclick="doFeedAll()">🌟 全體投餵</button>
+    </div>
+
+    <div class="matrix-zone">
+        <div style="font-size: 12px; margin-bottom: 5px; color: var(--primary); font-weight: bold;">🍖 快速投餵矩陣 (1-26)</div>
+        <div class="matrix-grid" id="matrix-grid"></div>
+    </div>
+
+    <div class="species-zone">
+        <div style="font-size: 12px; margin-bottom: 5px; color: var(--primary); font-weight: bold;">🧬 基因變更</div>
+        <div class="species-grid" id="species-btns"></div>
+    </div>
+</div>
+
+<script>
+const bioList = [
+    { icon: '🐟', name: '金魚' }, { icon: '🐠', name: '熱帶魚' }, { icon: '🐡', name: '河豚' }, { icon: '🦈', name: '鯊魚' },
+    { icon: '🐬', name: '海豚' }, { icon: '🐳', name: '鯨魚' }, { icon: '🐙', name: '章魚' }, { icon: '🐢', name: '海龜' },
+    { icon: '🦐', name: '小蝦' }, { icon: '🦀', name: '螃蟹' }, { icon: '🐧', name: '企鵝' }, { icon: '🦦', name: '海獺' },
+    { icon: '🦑', name: '烏賊' }, { icon: '🦞', name: '龍蝦' }, { icon: '🐚', name: '貝殼' }, { icon: '🐊', name: '鱷魚' }
+];
+
+let fishArray = [];
+let currentId = null; 
+const tank = document.getElementById('tank');
+
+function init() {
+    for(let i=0; i<26; i++) {
+        fishArray.push({
+            id: i + 1,
+            type: Math.floor(Math.random() * bioList.length),
+            x: 5 + Math.random() * 85,
+            y: 5 + Math.random() * 40,
+            dx: (Math.random() - 0.5) * 0.2,
+            dy: (Math.random() - 0.5) * 0.1,
+            hunger: 50 + Math.random() * 50
+        });
+    }
+
+    const mGrid = document.getElementById('matrix-grid');
+    fishArray.forEach(f => {
+        const cell = document.createElement('div');
+        cell.className = 'feed-cell';
+        cell.id = `cell-${f.id}`;
+        cell.onclick = (e) => { e.stopPropagation(); fastFeed(f.id); };
+        mGrid.appendChild(cell);
+    });
+
+    const sGrid = document.getElementById('species-btns');
+    bioList.forEach((bio, idx) => {
+        const btn = document.createElement('div');
+        btn.className = 'species-btn';
+        btn.innerText = bio.icon;
+        btn.onclick = (e) => { e.stopPropagation(); changeType(idx); };
+        sGrid.appendChild(btn);
+    });
+
+    render();
+}
+
+function render() {
+    fishArray.forEach(f => {
+        f.hunger = Math.max(0, f.hunger - 0.02);
+        f.x += f.dx; f.y += f.dy;
+        if(f.x < 2 || f.x > 94) f.dx *= -1;
+        if(f.y < 2 || f.y > 48) f.dy *= -1;
+
+        let el = document.getElementById(`fish-${f.id}`);
+        if (!el) {
+            el = document.createElement('div');
+            el.id = `fish-${f.id}`;
+            el.className = 'fish';
+            el.onclick = (e) => { e.stopPropagation(); selectFish(f.id); };
+            tank.appendChild(el);
+        }
+
+        const isSelected = (currentId === f.id);
+        const bio = bioList[f.type];
+        el.className = `fish ${isSelected ? 'selected' : ''}`;
+        el.style.transform = `translate(${f.x}vw, ${f.y}vh)`;
+        el.innerHTML = `<div class="fish-body" style="transform: scaleX(${f.dx > 0 ? -1 : 1})">${bio.icon}</div>`;
+
+        const cell = document.getElementById(`cell-${f.id}`);
+        cell.className = `feed-cell ${isSelected ? 'active-fish' : ''} ${f.hunger < 20 ? 'starving' : ''}`;
+        cell.innerHTML = `<span class="cell-icon">${bio.icon}</span><span>#${f.id}</span><span>${Math.floor(f.hunger)}%</span>`;
+        
+        if(isSelected) {
+            document.getElementById('sel-icon').innerText = bio.icon;
+            document.getElementById('sel-name').innerText = `NO.${f.id} ${bio.name}`;
+        }
+    });
+    requestAnimationFrame(render);
+}
+
+function fastFeed(id) {
+    selectFish(id);
+    const f = fishArray.find(item => item.id === id);
+    f.hunger = Math.min(100, f.hunger + 35);
+    createFoodEffect(f.x, f.y);
+}
+
+function selectFish(id) {
+    currentId = id;
+    const f = fishArray.find(item => item.id === id);
+    document.querySelectorAll('.species-btn').forEach((b, i) => {
+        b.classList.toggle('active', i === f.type);
+    });
+}
+
+function deselect() {
+    currentId = null;
+    document.getElementById('sel-icon').innerText = '🔍';
+    document.getElementById('sel-name').innerText = '請選取生物';
+    document.querySelectorAll('.species-btn').forEach(b => b.classList.remove('active'));
+}
+
+function doFeedAll() {
+    fishArray.forEach(f => {
+        f.hunger = Math.min(100, f.hunger + 20);
+        if(Math.random() > 0.7) createFoodEffect(f.x, f.y);
+    });
+}
+
+function createFoodEffect(x, y) {
+    const food = document.createElement('div');
+    food.className = 'food-item';
+    food.innerText = '🍖';
+    food.style.left = x + 'vw';
+    food.style.top = y + 'vh';
+    tank.appendChild(food);
+    setTimeout(() => food.remove(), 700);
+}
+
+function changeType(idx) {
+    if(!currentId) return;
+    fishArray.find(item => item.id === currentId).type = idx;
+}
+
+init();
+</script>
+</body>
+</html>
